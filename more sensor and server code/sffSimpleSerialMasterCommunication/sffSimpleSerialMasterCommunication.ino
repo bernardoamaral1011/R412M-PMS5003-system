@@ -36,13 +36,18 @@ void setup()
 void loop() 
 {
   delay(5000);
+  DEBUG_STREAM.write("hello");
   MODEM_STREAM.println("at");
-
+  while (!MODEM_STREAM.available()){
+  
+    MODEM_STREAM.println("at");
+  }
+  MODEM_STREAM.println("at");
   while (MODEM_STREAM.available())
   {     
     DEBUG_STREAM.write(MODEM_STREAM.read());
   }
-  
+  delay(5000);
   // check if the USB virtual serial wants a new baud rate
   // This will be used by the UEUpdater to flash new software
   if (DEBUG_STREAM.baud() != baud) {

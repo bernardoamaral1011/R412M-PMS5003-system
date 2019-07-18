@@ -14,9 +14,9 @@
   * SFF VCC and GND connected to IN+ and IN- of a 5V DC-DC converter,
   and Vout and GND of converter connect to Vin and GND of the sensor.
 
-  Created 20 February 2019
+  Created 26 June 2019
   By Bernardo Amaral
-  Modified 25 February 2019
+  Modified 18 July 2019
   By Bernardo Amaral
 
 */
@@ -34,11 +34,15 @@
 #endif
 
 #define SENSORLOCATION "av.liberdade"
+#define vacuumPump 3 //arduino vacuumPump pin
+#define hour 120 // 120
+#define quarter 15 // 15
+#define smallQuarter 1 // 1
 
 // timer variables
 unsigned long minuteStart, minuteCtr;
 unsigned long quarterStart, quarterCtr;
-unsigned long hourStart, hourCtr;
+unsigned long hourStart, hourCtr,twoHourStart, twoHourCtr;
 const unsigned long minute = 60000;  // 1 minute in ms
 const unsigned long serverOverhead = 1500; // server hourly overhead
 
@@ -64,6 +68,7 @@ int i = 0;
 int j = 0;
 
 // server token
+String sens_id = "2";
 String secretToken = "Tu.cNszz1)~MqSy_ok&mhZZ#FLZz8%";
 String errorToken = "b!PKnFniJ~jbj*yG)j`qyo,vL!2uK{";
 
@@ -99,7 +104,11 @@ void setup() {
   delay(30000); // sensor warm up time
 #endif
 
+  // Vacuum pump setup
+  pinMode(vacuumPump, OUTPUT);
+  digitalWrite(vacuumPump, HIGH);
   setupConnection();
+
 }
 
 
@@ -126,7 +135,7 @@ void setupConnection() {
 
   delay(500);
  
-  Serial1.println("AT+CGATT=1"); // TODO: test / tentar ler a mensagem de resposta
+  Serial1.println("AT+CGATT=1"); 
   if (Serial1.available()) {
     Serial1.read();
   }
@@ -135,62 +144,79 @@ void setupConnection() {
 }
 
 void loop() {
-  // reset measurement values
-  PM10_hour=0.0;
-  PM2_5_hour = 0.0; 
-  j = 0;
   
-  // hourly period
-  hourStart = millis();
-  hourCtr = hourStart;
-  DEBUG_PRINTLN("Starting loop");
+  twoHourStart = millis();
+  twoHourCtr = twoHourStart;
+  digitalWrite(vacuumPump, LOW);
   
-  while(hourCtr - hourStart < (minute * 60) - (serverOverhead * j)) {
-    // TODO: kill hourly time deviation
-    DEBUG_PRINTLN("Restarting hourly loop");
+  // Every 2 Hours, execute the following loop for 2 Hours
+  while(twoHourCtr - twoHourStart < (minute * hour)){
     
-    i = 0;
-    PM10_minute= 0.0;
-    PM2_5_minute = 0.0;
-    // take measures for one minute    
-    minuteStart = millis();
-    minuteCtr = minuteStart;
+    // reset measurement values
+    PM10_hour=0.0;
+    PM2_5_hour = 0.0; 
+    j = 0;
     
-    while(minuteCtr - minuteStart < minute * 15) {
-      // measurement function
-      readData();
-      PM10_minute = PM10_minute + PM10_Amb;
-      PM2_5_minute = PM2_5_minute + PM2_5_Amb;
-      i = i + 1;
+    // hourly period
+    hourStart = millis();
+    hourCtr = hourStart;
+    DEBUG_PRINTLN("Starting loop");
+  
+    //fifteen minute averages, according to APA, Qualar
+    while(hourCtr - hourStart < (minute * quarter) - (serverOverhead * j)) {
+      // TODO: kill hourly time deviation
+      DEBUG_PRINTLN("Restarting hourly loop");
       
-      minuteCtr = millis();
-    }
-
-    // calculate average for the above minute
-    PM10_hour = PM10_hour + (PM10_minute / i);
-    PM2_5_hour = PM2_5_hour + (PM2_5_minute / i);
-    j = j + 1;
-
-    DEBUG_PRINTLN("This minute averages for PM2.5 and PM10: ");
-    DEBUG_PRINT(PM2_5_minute / i);
-    DEBUG_PRINT("\t");
-    DEBUG_PRINTLN(PM10_minute / i);
-    DEBUG_PRINTLN("This hour averages for PM2.5 and PM10: ");
-    DEBUG_PRINT(PM2_5_hour / j);
-    DEBUG_PRINT("\t");
-    DEBUG_PRINTLN(PM10_hour / j);
-
-    // refresh hour counter
-    hourCtr = millis();
-  }
-
-  // calculate hourly average
-  PM10_hour = PM10_hour / j;
-  PM2_5_hour = PM2_5_hour / j;
+      i = 0;
+      PM10_minute= 0.0;
+      PM2_5_minute = 0.0;
+      // take measures for one minute    
+      minuteStart = millis();
+      minuteCtr = minuteStart;
+      
+      while(minuteCtr - minuteStart < minute * smallQuarter) {
+        // measurement function
+        readData();
+        PM10_minute = PM10_minute + PM10_Amb;
+        PM2_5_minute = PM2_5_minute + PM2_5_Amb;
+        i = i + 1;
+        
+        minuteCtr = millis();
+      }
   
-  // hourly period is over - send data to server
-  DEBUG_PRINTLN("Sending data to server");
-  sendToServer(0);
+      // calculate average for the above minute
+      PM10_hour = PM10_hour + (PM10_minute / i);
+      PM2_5_hour = PM2_5_hour + (PM2_5_minute / i);
+      j = j + 1;
+  
+      DEBUG_PRINTLN("This minute averages for PM2.5 and PM10: ");
+      DEBUG_PRINT(PM2_5_minute / i);
+      DEBUG_PRINT("\t");
+      DEBUG_PRINTLN(PM10_minute / i);
+      DEBUG_PRINTLN("This quarter averages for PM2.5 and PM10: ");
+      DEBUG_PRINT(PM2_5_hour / j);
+      DEBUG_PRINT("\t");
+      DEBUG_PRINTLN(PM10_hour / j);
+  
+      // refresh hour counter
+      hourCtr = millis();
+    }
+  
+    // calculate quarter average
+    PM10_hour = PM10_hour / j;
+    PM2_5_hour = PM2_5_hour / j;
+    
+    // quarter period is over - send data to server
+    DEBUG_PRINTLN("Sending data to server");
+    sendToServer(0);
+
+    // refresh twoHour counter
+    twoHourCtr = millis();
+  }
+  
+  digitalWrite(vacuumPump, HIGH);
+  
+  delay(7200000);
 }
 
 
@@ -263,11 +289,14 @@ void readData() {
     DEBUG_PRINT(';');
     DEBUG_PRINT(fDataCheck);
     DEBUG_PRINT('\n');
+
+    //TODO: check if pump is on?
   }
   
   delay(700);  // higher delay will get you checksum errors
   return;
 }
+
 
 void sendToServer(int error) {
   
@@ -288,16 +317,18 @@ void sendToServer(int error) {
   delay(500);
   String location = SENSORLOCATION;
   
+  /*ursula: "146.193.48.22\",49161,"*/
+  /*docean: "138.68.165.208\",5555,"*/
+  
   if(error) {
-    Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,"+
+    Serial1.println("AT+USOST=0,\"146.193.48.22\",49161,"+
     String(errorToken.length() + location.length() + 1) +
     ",\""+ errorToken + " " + location +
     "\"");
   } else {
-    Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,"+
-    String(secretToken.length() + location.length() + String(PM10_hour).length() + String(PM2_5_hour).length() + 3) +
-    ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location +
-    "\"");
+    Serial1.println("AT+USOST=0,\"146.193.48.22\",49161,"+
+    String(secretToken.length() + location.length() + String(PM10_hour).length() + String(PM2_5_hour).length() + sens_id.length()+ 4) +
+    ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location + " " + sens_id +"\"");
   }
   
   while (Serial1.available()) {

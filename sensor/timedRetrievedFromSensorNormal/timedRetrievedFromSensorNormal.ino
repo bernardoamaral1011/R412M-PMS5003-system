@@ -16,14 +16,19 @@
 
   Created 20 February 2019
   By Bernardo Amaral
-  Modified 25 February 2019
+  Modified 18 July 2019
   By Bernardo Amaral
 
 */
 #include <Arduino.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 11
 
 // debug mode - uncomment this line to turn on debug mode
-#define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
  #define DEBUG_PRINTLN(x)  SerialUSB.println(x)
@@ -34,11 +39,21 @@
 #endif
 
 #define SENSORLOCATION "av.liberdade"
+#define vacuumPump 2 //arduino vacuumPump pin
+#define hour 120 // 120
+#define quarter 15 // 15
+#define smallQuarter 1 // 1
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
 
 // timer variables
 unsigned long minuteStart, minuteCtr;
 unsigned long quarterStart, quarterCtr;
-unsigned long hourStart, hourCtr;
+unsigned long hourStart, hourCtr,twoHourStart, twoHourCtr;
 const unsigned long minute = 60000;  // 1 minute in ms
 const unsigned long serverOverhead = 1500; // server hourly overhead
 
@@ -58,12 +73,14 @@ uint8_t errorCode;
 // avg calculation variables
 float PM10_minute, PM2_5_minute;
 float PM10_hour, PM2_5_hour;
+float temperature;
 
 //loop variables
 int i = 0; 
 int j = 0;
 
-// server token for security
+// server token
+String sens_id = "1";
 String secretToken = "Tu.cNszz1)~MqSy_ok&mhZZ#FLZz8%";
 String errorToken = "b!PKnFniJ~jbj*yG)j`qyo,vL!2uK{";
 
@@ -98,8 +115,8 @@ void setup() {
 #ifndef DEBUG
   delay(30000); // sensor warm up time
 #endif
-
   setupConnection();
+  sensors.begin();
 }
 
 
@@ -135,62 +152,89 @@ void setupConnection() {
 }
 
 void loop() {
-  // reset measurement values
-  PM10_hour=0.0;
-  PM2_5_hour = 0.0; 
-  j = 0;
   
-  // hourly period
-  hourStart = millis();
-  hourCtr = hourStart;
-  DEBUG_PRINTLN("Starting loop");
+  twoHourStart = millis();
+  twoHourCtr = twoHourStart;
   
-  while(hourCtr - hourStart < (minute * 1) - (serverOverhead * j)) {
-    // TODO: kill hourly time deviation
-    DEBUG_PRINTLN("Restarting hourly loop");
+  // Every 2 Hours, execute the following loop for 2 Hours
+  while(twoHourCtr - twoHourStart < (minute * hour)){
+
+    // Temperature Sensor
+    SerialUSB.print("Requesting temperatures...");
+    sensors.requestTemperatures(); // Send the command to get temperatures
+    SerialUSB.println("DONE");
+    // After we got the temperatures, we can print them here.
+    // We use the function ByIndex, and as an example get the temperature from the first sensor only.
+    SerialUSB.print("Temperature for the device 1 (index 0) is: ");
+    temperature = sensors.getTempCByIndex(0);
+    SerialUSB.println(temperature);  
+
     
-    i = 0;
-    PM10_minute= 0.0;
-    PM2_5_minute = 0.0;
-    // take measures for one minute    
-    minuteStart = millis();
-    minuteCtr = minuteStart;
+    // reset measurement values
+    PM10_hour=0.0;
+    PM2_5_hour = 0.0; 
+    j = 0;
     
-    while(minuteCtr - minuteStart < minute * 0.5) {
-      // measurement function
-      readData();
-      PM10_minute = PM10_minute + PM10_Amb;
-      PM2_5_minute = PM2_5_minute + PM2_5_Amb;
-      i = i + 1;
+    // hourly period
+    hourStart = millis();
+    hourCtr = hourStart;
+    DEBUG_PRINTLN("Starting loop");
+  
+    //fifteen minute averages, according to APA, Qualar
+    while(hourCtr - hourStart < (minute * quarter) - (serverOverhead * j)) {
+      // TODO: kill hourly time deviation
+      DEBUG_PRINTLN("Restarting hourly loop");
       
-      minuteCtr = millis();
+      i = 0;
+      PM10_minute= 0.0;
+      PM2_5_minute = 0.0;
+      // take measures for one minute    
+      minuteStart = millis();
+      minuteCtr = minuteStart;
+      
+      while(minuteCtr - minuteStart < minute * smallQuarter) {
+        // measurement function
+        readData();
+        PM10_minute = PM10_minute + PM10_Amb;
+        PM2_5_minute = PM2_5_minute + PM2_5_Amb;
+        i = i + 1;
+        
+        minuteCtr = millis();
+      }
+  
+      // calculate average for the above minute
+      PM10_hour = PM10_hour + (PM10_minute / i);
+      PM2_5_hour = PM2_5_hour + (PM2_5_minute / i);
+      j = j + 1;
+  
+      DEBUG_PRINTLN("This minute averages for PM2.5 and PM10: ");
+      DEBUG_PRINT(PM2_5_minute / i);
+      DEBUG_PRINT("\t");
+      DEBUG_PRINTLN(PM10_minute / i);
+      DEBUG_PRINTLN("This quarter averages for PM2.5 and PM10: ");
+      DEBUG_PRINT(PM2_5_hour / j);
+      DEBUG_PRINT("\t");
+      DEBUG_PRINTLN(PM10_hour / j);
+  
+      // refresh hour counter
+      hourCtr = millis();
     }
+  
+    // calculate quarter average
+    PM10_hour = PM10_hour / j;
+    PM2_5_hour = PM2_5_hour / j;
+    
+    // quarter period is over - send data to server
+    sensors.requestTemperatures();
+    temperature = sensors.getTempCByIndex(0);
+    DEBUG_PRINTLN("Sending data to server");
+    sendToServer(0);
 
-    // calculate average for the above minute
-    PM10_hour = PM10_hour + (PM10_minute / i);
-    PM2_5_hour = PM2_5_hour + (PM2_5_minute / i);
-    j = j + 1;
-
-    DEBUG_PRINTLN("This minute averages for PM2.5 and PM10: ");
-    DEBUG_PRINT(PM2_5_minute / i);
-    DEBUG_PRINT("\t");
-    DEBUG_PRINTLN(PM10_minute / i);
-    DEBUG_PRINTLN("This hour averages for PM2.5 and PM10: ");
-    DEBUG_PRINT(PM2_5_hour / j);
-    DEBUG_PRINT("\t");
-    DEBUG_PRINTLN(PM10_hour / j);
-
-    // refresh hour counter
-    hourCtr = millis();
+    // refresh twoHour counter
+    twoHourCtr = millis();
   }
 
-  // calculate hourly average
-  PM10_hour = PM10_hour / j;
-  PM2_5_hour = PM2_5_hour / j;
-  
-  // hourly period is over - send data to server
-  DEBUG_PRINTLN("Sending data to server");
-  sendToServer(0);
+  delay(7200000);
 }
 
 
@@ -263,6 +307,8 @@ void readData() {
     DEBUG_PRINT(';');
     DEBUG_PRINT(fDataCheck);
     DEBUG_PRINT('\n');
+
+    //TODO: check if pump is on?
   }
   
   delay(700);  // higher delay will get you checksum errors
@@ -272,7 +318,7 @@ void readData() {
 void sendToServer(int error) {
   
   // first check if modem is still attached to network
-  Serial1.println("AT+CGATT?");
+  Serial1.println("AT+CGATT=1");
   while (Serial1.available()){
     Serial1.read();  // TODO: if error
   }
@@ -288,16 +334,18 @@ void sendToServer(int error) {
   delay(500);
   String location = SENSORLOCATION;
   
+  /*ursula: "146.193.48.22\",49161,"*/
+  /*docean: "138.68.165.208\",5555,"*/
+  
   if(error) {
-    Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,"+
+    Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,  "+
     String(errorToken.length() + location.length() + 1) +
     ",\""+ errorToken + " " + location +
     "\"");
   } else {
     Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,"+
-    String(secretToken.length() + location.length() + String(PM10_hour).length() + 2+String(PM2_5_hour).length() + 3) +
-    ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location +" "+ "1"+
-    "\"");
+    String(secretToken.length() + location.length() + String(PM10_hour).length() + String(PM2_5_hour).length() + sens_id.length() + String(temperature).length()+ 5) +
+    ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location +" "+ sens_id +" "+ String(temperature) +"\"");
   }
   
   while (Serial1.available()) {
