@@ -177,10 +177,12 @@ void loop() {
       while(minuteCtr - minuteStart < minute * smallQuarter) {
         // measurement function
         readData();
-        PM10_minute = PM10_minute + PM10_Amb;
-        PM2_5_minute = PM2_5_minute + PM2_5_Amb;
-        i = i + 1;
-        
+        // Validating test
+        if (!(PM10_minute + 750 < PM10_Amb || PM2_5_minute + 750 < PM2_5_Amb)){
+          PM10_minute = PM10_minute + PM10_Amb;
+          PM2_5_minute = PM2_5_minute + PM2_5_Amb;
+          i = i + 1; 
+        }
         minuteCtr = millis();
       }
   
