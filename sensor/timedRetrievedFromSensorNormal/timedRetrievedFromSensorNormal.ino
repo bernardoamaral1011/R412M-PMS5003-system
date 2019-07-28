@@ -73,6 +73,7 @@ uint8_t errorCode;
 // avg calculation variables
 float PM10_minute, PM2_5_minute;
 float PM10_hour, PM2_5_hour;
+float PM10_send, PM2_5_send;
 float temperature;
 
 //loop variables
@@ -248,9 +249,13 @@ void loop() {
     }
   
     // calculate quarter average
-    PM10_hour = PM10_hour / j;
-    PM2_5_hour = PM2_5_hour / j;
+    PM10_send = PM10_hour / j;
+    PM2_5_send = PM2_5_hour / j;
     
+    DEBUG_PRINTLN("This quarter FINAL averages for PM2.5 and PM10: ");
+    DEBUG_PRINT(PM2_5_send);
+    DEBUG_PRINT("\t");
+    DEBUG_PRINTLN(PM10_send);
     // quarter period is over - send data to server
     //sensors.requestTemperatures();
     //temperature = sensors.getTempCByIndex(0);
@@ -367,8 +372,8 @@ void sendToServer(int save) {
   
 
   Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,"+
-  String(secretToken.length() + location.length() + String(PM10_hour).length() + String(PM2_5_hour).length() + String(save).length() + String(temperature).length()+ 5) +
-  ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location +" "+ String(save) +" "+ String(temperature) +"\"");
+  String(secretToken.length() + location.length() + String(PM10_send).length() + String(PM2_5_send).length() + String(save).length() + String(temperature).length()+ 5) +
+  ",\""+ secretToken + " " + String(PM10_send) + " " + String(PM2_5_send) + " " + location +" "+ String(save) +" "+ String(temperature) +"\"");
   
   while (Serial1.available()) {     
     SerialUSB.write(Serial1.read());
