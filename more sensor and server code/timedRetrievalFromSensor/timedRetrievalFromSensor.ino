@@ -94,12 +94,8 @@ void setup() {
   while(!Serial1) {}
   
   DEBUG_PRINTLN("Serial ports ready!");
-
-#ifndef DEBUG
   delay(30000); // sensor warm up time
-#endif
-
-  setupConnection();
+  //setupConnection();
 }
 
 
@@ -190,7 +186,7 @@ void loop() {
   
   // hourly period is over - send data to server
   DEBUG_PRINTLN("Sending data to server");
-  sendToServer(0);
+  //sendToServer(0);
 }
 
 
@@ -254,7 +250,7 @@ void readData() {
   // First check for errors
   if(dataCheck != fDataCheck){ 
     // send error message to server
-    sendToServer(1);
+    //sendToServer(1);
 
     DEBUG_PRINTLN("Error! Error code:");
     DEBUG_PRINT(errorCode);

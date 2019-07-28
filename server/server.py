@@ -11,6 +11,7 @@ from pymongo import MongoClient
 client = MongoClient('mongodb://admin:Mf41jHc7gAfLzKhZ@lisbon-pm-monitoring-shard-00-00-6b7v3.gcp.mongodb.net:27017,lisbon-pm-monitoring-shard-00-01-6b7v3.gcp.mongodb.net:27017,lisbon-pm-monitoring-shard-00-02-6b7v3.gcp.mongodb.net:27017/test?ssl=true&replicaSet=lisbon-pm-monitoring-shard-0&authSource=admin&retryWrites=true')
 pmDB = client['pm']
 pm = pmDB['pm']
+pm_minute = pmDB['pm_minute']
 
 #print(external_ip)
 log = logging.getLogger('udp_server')
@@ -41,13 +42,20 @@ for data in udp_server():
         pm2_5 = splitData[2]
         location = splitData[3]
         sens_id = splitData[4]
-        now = datetime.datetime.now()
+        temperature = splitData[5]
+        now = datetime.datetime.now()+datetime.timedelta(hours=1)
         curDate = now.strftime("%Y-%m-%d %H:%M")
         
         # Save measures in database
-        measure = {"date": curDate, "location": location, "pm10": pm10, "pm2_5": pm2_5, "id": sens_id}
-        if not pm.find_one({"date": curDate}):
-            pm.insert_one(measure)
+        measure = {"date": curDate, "location": location, "pm10": pm10, "pm2_5": pm2_5, "temp": temperature}
+
+        if sens_id:
+            if not pm.find_one({"date": curDate}):
+                pm.insert_one(measure)
+        else:
+            if not pm_minute.find_one({"date": curDate}):
+                pm_minute.insert_one(measure)
+                
     elif splitData[0] == 'b!PKnFniJ~jbj*yG)j`qyo,vL!2uK{':
         location = splitData[1]
         print("Sensor error at " + location)

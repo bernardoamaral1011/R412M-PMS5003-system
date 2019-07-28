@@ -319,16 +319,16 @@ void sendToServer(int error) {
   delay(500);
   String location = SENSORLOCATION;
   
-  /*ursula: "146.193.48.22\",49161,"*/
+  /*ursula: "10.1.1.1\",49161,"*/
   /*docean: "138.68.165.208\",5555,"*/
   
   if(error) {
-    Serial1.println("AT+USOST=0,\"146.193.48.22\",49161,"+
+    Serial1.println("AT+USOST=0,\"10.1.1.1\",49161,"+
     String(errorToken.length() + location.length() + 1) +
     ",\""+ errorToken + " " + location +
     "\"");
   } else {
-    Serial1.println("AT+USOST=0,\"146.193.48.22\",49161,"+
+    Serial1.println("AT+USOST=0,\"10.1.1.1\",49161,"+
     String(secretToken.length() + location.length() + String(PM10_hour).length() + String(PM2_5_hour).length() + sens_id.length()+ 4) +
     ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location + " " + sens_id +"\"");
   }

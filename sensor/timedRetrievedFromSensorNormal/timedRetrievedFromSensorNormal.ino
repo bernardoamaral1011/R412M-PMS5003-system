@@ -25,10 +25,10 @@
 #include <DallasTemperature.h>
 
 // Data wire is plugged into port 2 on the Arduino
-#define ONE_WIRE_BUS 11
+#define ONE_WIRE_BUS 3
 
 // debug mode - uncomment this line to turn on debug mode
-//#define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
  #define DEBUG_PRINTLN(x)  SerialUSB.println(x)
@@ -39,7 +39,7 @@
 #endif
 
 #define SENSORLOCATION "av.liberdade"
-#define vacuumPump 2 //arduino vacuumPump pin
+#define vacuumPump 11 //arduino vacuumPump pin
 #define hour 120 // 120
 #define quarter 15 // 15
 #define smallQuarter 1 // 1
@@ -99,7 +99,7 @@ void setup() {
   
 #ifdef DEBUG
   SerialUSB.begin(9600);
-  while(!SerialUSB) {}
+  //while(!SerialUSB) {}
 #endif
 
   // connected to sensor
@@ -115,6 +115,11 @@ void setup() {
 #ifndef DEBUG
   delay(30000); // sensor warm up time
 #endif
+
+  // Vacuum pump setup
+  pinMode(vacuumPump, OUTPUT);
+  digitalWrite(vacuumPump, HIGH);
+  
   setupConnection();
   sensors.begin();
 }
@@ -123,31 +128,30 @@ void setup() {
 void setupConnection() {
   
   Serial1.println("AT");
-  while (Serial1.available()) {
-    Serial1.read();
+  while (Serial1.available()) {     
+    SerialUSB.write(Serial1.read());
   }
 
   delay(500);
   
   Serial1.println("AT+CFUN=1");
-  while (Serial1.available()) {
-    Serial1.read();
+  while (Serial1.available()) {     
+    SerialUSB.write(Serial1.read());
   }
 
   delay(500);
   
   Serial1.println("AT+CGDCONT=1,\"IP\",\"\"");
-  while (Serial1.available()) {
-    Serial1.read();
+  while (Serial1.available()) {     
+    SerialUSB.write(Serial1.read());
   }
 
   delay(500);
  
   Serial1.println("AT+CGATT=1"); // TODO: test / tentar ler a mensagem de resposta
-  if (Serial1.available()) {
+  while (Serial1.available()) {     
     Serial1.read();
   }
-
   delay(500);
 }
 
@@ -155,9 +159,10 @@ void loop() {
   
   twoHourStart = millis();
   twoHourCtr = twoHourStart;
+  digitalWrite(vacuumPump, LOW);
   
   // Every 2 Hours, execute the following loop for 2 Hours
-  while(twoHourCtr - twoHourStart < (minute * hour)){
+  while(twoHourCtr - twoHourStart < (minute * hour)+ (1*minute)){
 
     // Temperature Sensor
     SerialUSB.print("Requesting temperatures...");
@@ -181,7 +186,7 @@ void loop() {
     DEBUG_PRINTLN("Starting loop");
   
     //fifteen minute averages, according to APA, Qualar
-    while(hourCtr - hourStart < (minute * quarter) - (serverOverhead * j)) {
+    while(hourCtr - hourStart < (minute * quarter)) {
       // TODO: kill hourly time deviation
       DEBUG_PRINTLN("Restarting hourly loop");
       
@@ -192,19 +197,36 @@ void loop() {
       minuteStart = millis();
       minuteCtr = minuteStart;
       
+      // Usually there's 14 measures made if smallQuarter value is 1
+      // However, when concentrations raise, the sensor takes more measures
+      // in smaller amounts of time. w variable is here so that
+      // that factor doesn't make our mean incorrect in what regards time
+      
       while(minuteCtr - minuteStart < minute * smallQuarter) {
-        // measurement function
-        readData();
-        // Validating test
-        if (!(PM10_minute + 750 < PM10_Amb || PM2_5_minute + 750 < PM2_5_Amb)){
-          PM10_minute = PM10_minute + PM10_Amb;
-          PM2_5_minute = PM2_5_minute + PM2_5_Amb;
-          i = i + 1; 
-        }
         
+        // measurement function
+        //ATTENTION: REMOVAL
+        readData();
+        
+        // Validating test
+        // Somethins the sensor has errors and spikes for one measure or two at a time
+        // so here we put a value "timer" to spot errors, but that also spots when the 
+        // concentration simply raises a lot in a small amount of time: variable z
+        
+        if (!(PM10_minute + 750 < PM10_Amb || PM2_5_minute + 750 < PM2_5_Amb)){
+            PM10_minute = PM10_minute + PM10_Amb;
+            PM2_5_minute = PM2_5_minute + PM2_5_Amb;
+            i = i + 1;
+        }
+
         minuteCtr = millis();
       }
-  
+      // make sure the device is still connected
+
+      Serial1.println("AT+CGATT=1"); 
+      while (Serial1.available()) {     
+        Serial1.read();
+      }
       // calculate average for the above minute
       PM10_hour = PM10_hour + (PM10_minute / i);
       PM2_5_hour = PM2_5_hour + (PM2_5_minute / i);
@@ -221,6 +243,8 @@ void loop() {
   
       // refresh hour counter
       hourCtr = millis();
+      //pipeline for server testing
+      sendToServer(0);
     }
   
     // calculate quarter average
@@ -228,15 +252,17 @@ void loop() {
     PM2_5_hour = PM2_5_hour / j;
     
     // quarter period is over - send data to server
-    sensors.requestTemperatures();
-    temperature = sensors.getTempCByIndex(0);
+    //sensors.requestTemperatures();
+    //temperature = sensors.getTempCByIndex(0);
     DEBUG_PRINTLN("Sending data to server");
-    sendToServer(0);
+    sendToServer(1);
 
     // refresh twoHour counter
     twoHourCtr = millis();
   }
-
+  
+  digitalWrite(vacuumPump, HIGH);
+  
   delay(7200000);
 }
 
@@ -299,9 +325,9 @@ void readData() {
   }
   
   // First check for errors
-  if(dataCheck != fDataCheck){ 
+  if(dataCheck != fDataCheck){
     // send error message to server
-    sendToServer(1);
+    //sendToServer(1);
 
     DEBUG_PRINTLN("Error! Error code:");
     DEBUG_PRINT(errorCode);
@@ -313,25 +339,24 @@ void readData() {
 
     //TODO: check if pump is on?
   }
-  
   delay(700);  // higher delay will get you checksum errors
   return;
 }
 
-void sendToServer(int error) {
+void sendToServer(int save) {
   
   // first check if modem is still attached to network
   Serial1.println("AT+CGATT=1");
-  while (Serial1.available()){
-    Serial1.read();  // TODO: if error
+  while (Serial1.available()) {     
+    SerialUSB.write(Serial1.read());
   }
 
-  // open a socket, send udp packet and close socket
   delay(500);
- 
+  
+  // open a socket, send udp packet and close socket
   Serial1.println("AT+USOCR=17,1");
-  while (Serial1.available()) {
-    Serial1.read(); 
+  while (Serial1.available()) {     
+    SerialUSB.write(Serial1.read());
   }
  
   delay(500);
@@ -340,27 +365,22 @@ void sendToServer(int error) {
   /*ursula: "146.193.48.22\",49161,"*/
   /*docean: "138.68.165.208\",5555,"*/
   
-  if(error) {
-    Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,  "+
-    String(errorToken.length() + location.length() + 1) +
-    ",\""+ errorToken + " " + location +
-    "\"");
-  } else {
-    Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,"+
-    String(secretToken.length() + location.length() + String(PM10_hour).length() + String(PM2_5_hour).length() + sens_id.length() + String(temperature).length()+ 5) +
-    ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location +" "+ sens_id +" "+ String(temperature) +"\"");
+
+  Serial1.println("AT+USOST=0,\"138.68.165.208\",5555,"+
+  String(secretToken.length() + location.length() + String(PM10_hour).length() + String(PM2_5_hour).length() + String(save).length() + String(temperature).length()+ 5) +
+  ",\""+ secretToken + " " + String(PM10_hour) + " " + String(PM2_5_hour) + " " + location +" "+ String(save) +" "+ String(temperature) +"\"");
+  
+  while (Serial1.available()) {     
+    SerialUSB.write(Serial1.read());
   }
   
-  while (Serial1.available()) {
-    Serial1.read(); 
-  }
 
   delay(500);
   
   Serial1.println("AT+USOCL=0");
   
-  while (Serial1.available()) {
-    Serial1.read();
+  while (Serial1.available()) {     
+    SerialUSB.write(Serial1.read());
   }
 
   return;
