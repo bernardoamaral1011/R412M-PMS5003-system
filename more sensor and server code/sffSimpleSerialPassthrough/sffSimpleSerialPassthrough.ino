@@ -11,6 +11,8 @@ unsigned long baud = 115200;  //start at 115200 allow the USB port to change the
 unsigned long baud = 9600;  //start at 9600 allow the USB port to change the Baudrate
 #endif
 
+String hello;
+
 void setup() 
 {
   // Turn the power to the SARA module on.
@@ -45,10 +47,5 @@ void loop()
     DEBUG_STREAM.write(MODEM_STREAM.read());
   }
   
-  // check if the USB virtual serial wants a new baud rate
-  // This will be used by the UEUpdater to flash new software
-  if (DEBUG_STREAM.baud() != baud) {
-    baud = DEBUG_STREAM.baud();
-    MODEM_STREAM.begin(baud);
-  }
+  
 }
